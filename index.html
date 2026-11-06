@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Love Heart</title>
+<style>
+html,body{margin:0;height:100%;background:#060208;overflow:hidden}
+canvas{display:block;width:100%;height:100%}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const PHRASES = ["I love you","Seni seviyorum","Te amo","Je t'aime","Ich liebe dich","Ti amo",
+  "Eu te amo","Я тебя люблю","사랑해","愛してる","我爱你","मैं तुमसे प्यार करता हूँ",
+  "Σ' αγαπώ","Ik hou van jou","Jag älskar dig","Kocham cię","ฉันรักเธอ","Anh yêu em",
+  "Aku cinta kamu","Я тебе кохаю","मी तुझ्यावर प्रेम करतो","ମୁଁ ତୁମକୁ ଭଲ ପାଏ"];
+
+const WINE=[.58,0,.09], CRIMSON=[.9,.05,.14], BLOOD=[.98,.1,.16];
+const FLASH=[1,.78,.78], BGC=[6/255,2/255,8/255];
+const FF = "Arial,'Segoe UI','Noto Sans','Noto Sans Devanagari','Noto Sans Oriya',sans-serif";
+const SIZES=[9,10,11,12], DURATION=10000, ANIM=42, LIFT=34, GAP=7;
+
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const mix=(a,b,k)=>a.map((p,i)=>p+(b[i]-p)*k), dim=(c,k)=>c.map(v=>v*k);
+const rgb=c=>"rgb("+c.map(v=>Math.round(Math.max(0,Math.min(1,v))*255)).join()+")";
+const clamp=v=>Math.max(0,Math.min(1,v));
+function rng(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+
+let run = 0;
+function start(){
+  const id = ++run, R = rng(11);
+  const dpr = window.devicePixelRatio || 1, W = innerWidth, H = innerHeight;
+  cv.width = W*dpr; cv.height = H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  const layer = document.createElement("canvas");
+  layer.width = cv.width; layer.height = cv.height;
+  const lg = layer.getContext("2d"); lg.setTransform(dpr,0,0,dpr,0,0);
+  for (const g of [ctx, lg]) { g.textAlign="center"; g.textBaseline="middle"; }
+
+  const k = Math.min(W/720, (H-40)/609), SC = 21*k, fs = Math.max(k,.8);
+
+  // heart outline
+  const POLY = [];
+  for (let i=0;i<720;i++){
+    const a = 2*Math.PI*i/720;
+    POLY.push([16*Math.sin(a)**3*SC,
+      (13*Math.cos(a)-5*Math.cos(2*a)-2*Math.cos(3*a)-Math.cos(4*a))*SC]);
+  }
+  const EDGES = POLY.map((p,i)=>[p, POLY[(i+1)%720]]);
+  const YMAX = Math.max(...POLY.map(p=>p[1])), YMIN = Math.min(...POLY.map(p=>p[1]));
+  const CY = (YMAX+YMIN)/2;
+  const spans = y => {
+    const xs=[];
+    for (const [[x1,y1],[x2,y2]] of EDGES)
+      if ((y1<=y&&y<y2)||(y2<=y&&y<y1)) xs.push(x1+(y-y1)*(x2-x1)/(y2-y1));
+    xs.sort((a,b)=>a-b);
+    const out=[]; for(let i=0;i+1<xs.length;i+=2) out.push([xs[i],xs[i+1]]);
+    return out;
+  };
+  const intersect=(A,B)=>{const o=[];
+    for(const a of A)for(const b of B){const lo=Math.max(a[0],b[0]),hi=Math.min(a[1],b[1]);
+      if(hi-lo>14*k)o.push([lo,hi]);} return o;};
+
+  // phrase cycle (reshuffled each round)
+  let queue=[];
+  const next=()=>{ if(!queue.length){queue=PHRASES.slice();
+    for(let i=queue.length-1;i>0;i--){const j=R()*(i+1)|0;[queue[i],queue[j]]=[queue[j],queue[i]];}}
+    return queue.pop(); };
+  const mw=(t,s)=>{ctx.font="bold "+s+"px "+FF;return ctx.measureText(t).width;};
+
+  // layout rows of text inside the heart
+  const rowH = 12*fs*1.25 + 3, half = rowH/2, placed = [];
+  for (let y=YMAX-half; y>YMIN+half; y-=rowH){
+    for (let [lo,hi] of intersect(spans(y+half), spans(y-half))){
+      lo+=4*k; hi-=4*k; let cur=lo+R()*8*k; const line=[];
+      for(;;){
+        let fit=null;
+        for(let i=0;i<10;i++){
+          const text=next(), size=SIZES[R()*4|0]*fs, w=mw(text,size);
+          if(cur+w<=hi){fit={text,size,w};break;}
+        }
+        if(!fit)break;
+        line.push({x:cur+fit.w/2,text:fit.text,size:fit.size,w:fit.w});
+        cur+=fit.w+GAP*k;
+      }
+      if(!line.length)continue;
+      if(line.length>1){
+        const last=line[line.length-1], left=hi-(last.x+last.w/2);
+        line.forEach((it,i)=>it.x+=left*i/(line.length-1));
+      } else line[0].x=(lo+hi)/2;
+      line.forEach((it,i)=>placed.push({...it,y,edge:i===0||i===line.length-1}));
+    }
+  }
+
+  // colors + screen coordinates
+  const ox=W/2, oy=H/2;
+  for (const p of placed){
+    p.rad = Math.min(1, Math.hypot(p.x/(16*SC), (p.y-CY)/(14.5*SC)));
+    let c = mix(WINE, CRIMSON, .25+.75*p.rad);
+    c = mix(c, BLOOD, R()*.35 + (p.edge?.3:0));
+    p.color = c.map(v=>Math.min(1,v));
+    p.X = ox+p.x; p.Y = oy-(p.y-CY); p.dx = (R()*20-10)*k; p.f = 0;
+  }
+  const ang = p => ((Math.atan2(p.x, p.y-CY)%(2*Math.PI))+2*Math.PI)%(2*Math.PI);
+  const edges = placed.filter(p=>p.edge).sort((a,b)=>ang(a)-ang(b));
+  const inner = placed.filter(p=>!p.edge).map(p=>[-p.rad+R()*.08,p]).sort((a,b)=>a[0]-b[0]).map(a=>a[1]);
+  const ORDER = edges.concat(inner);
+  const RATE = ORDER.length/(DURATION/16);
+
+  function draw(g, p, u){
+    const e = 1-(1-u)**3, c = p.color;
+    const px = p.X + p.dx*(1-e), py = p.Y - (1-e)*LIFT*k;
+    g.font = "bold "+p.size+"px "+FF;
+    g.fillStyle = rgb(mix(BGC, dim(c,.3), e)); g.fillText(p.text, p.X+2*k, p.Y+3*k);
+    g.font = "bold "+(p.size+fs)+"px "+FF;
+    g.fillStyle = rgb(mix(BGC, dim(c,.2), e*e)); g.fillText(p.text, px, py);
+    g.font = "bold "+p.size+"px "+FF;
+    const f = .75*Math.sin(Math.PI*clamp((u-.55)/.45));
+    g.fillStyle = rgb(mix(mix(BGC,c,e**1.5), FLASH, f)); g.fillText(p.text, px, py);
+  }
+
+  let acc=0, idx=0, active=[], last=0, flashP=null, flashUntil=0, nextFlash=0;
+  const done=[];
+
+  function frame(now){
+    if (id!==run) return;
+    const dt = Math.min(50, now-last)/16; last = now;
+    ctx.clearRect(0,0,W,H);
+
+    acc += RATE*dt;
+    while(acc>=1 && idx<ORDER.length){acc--; active.push(ORDER[idx++]);}
+    ctx.drawImage(layer,0,0,W,H);
+
+    active = active.filter(p=>{
+      p.f += dt;
+      const u = clamp(p.f/ANIM);
+      if (u>=1){ draw(lg,p,1); done.push(p); return false; }
+      draw(ctx,p,u); return true;
+    });
+
+    // shimmer once everything has landed
+    if (idx>=ORDER.length && !active.length && now>nextFlash){
+      flashP = done[R()*done.length|0]; flashUntil = now+260; nextFlash = now+140;
+    }
+    if (flashP && now<flashUntil){
+      ctx.font="bold "+flashP.size+"px "+FF;
+      ctx.fillStyle = rgb(mix(flashP.color,FLASH,.6));
+      ctx.fillText(flashP.text, flashP.X, flashP.Y);
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(t=>{last=t; frame(t);});
+}
+
+start();
+let rt; addEventListener("resize",()=>{clearTimeout(rt); rt=setTimeout(start,250);});
+cv.addEventListener("click", start);   // tap to replay
+</script>
+</body>
+</html>
